@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>量子井字棋</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg:      #0d0f17;
+  --surface: #161925;
+  --card:    #1e2235;
+  --border:  #2a3050;
+  --fg:      #e8eaf6;
+  --muted:   #6b7599;
+  --accent:  #7c6df5;
+  --accent2: #38d9f5;
+  --x:       #f06292;
+  --o:       #4fc3f7;
+  --good:    #69f0ae;
+  --warn:    #ffcc02;
+  color-scheme: dark;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Space Grotesk',system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:16px}
+body{display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px 16px 32px}
+
+h1{font-size:1.6rem;font-weight:800;letter-spacing:-.03em;text-align:center;margin-bottom:4px}
+h1 span{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{color:var(--muted);font-size:.85rem;text-align:center;margin-bottom:28px}
+
+/* Score bar */
+.scorebar{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid var(--border);width:min(400px,96vw)}
+.score-side{flex:1;padding:12px 0;text-align:center;background:var(--surface);transition:background .3s}
+.score-side.active{background:var(--card)}
+.score-name{font-size:.78rem;color:var(--muted);letter-spacing:.04em}
+.score-mark{font-size:2rem;font-weight:800;line-height:1.1}
+.score-mark.x{color:var(--x)}
+.score-mark.o{color:var(--o)}
+.score-pts{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:600;font-variant-numeric:tabular-nums}
+.score-mid{padding:12px 16px;background:var(--card);display:flex;flex-direction:column;align-items:center;gap:2px;border-left:1px solid var(--border);border-right:1px solid var(--border)}
+.score-mid .turn-label{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.score-mid .turn-mark{font-size:1.3rem;font-weight:800;transition:color .2s}
+
+/* Board */
+.board-wrap{position:relative;margin-bottom:16px}
+.board{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:18px;width:min(400px,96vw)}
+.cell{aspect-ratio:1;background:var(--card);border-radius:12px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;overflow:hidden;transition:border-color .15s,transform .08s,box-shadow .15s;user-select:none}
+.cell:hover:not(.taken):not(.no-turn){border-color:var(--accent);transform:scale(1.04);box-shadow:0 0 16px rgba(124,109,245,.25)}
+.cell.taken{cursor:not-allowed}
+.cell.no-turn{cursor:not-allowed}
+
+/* Win highlight */
+.cell.win-cell{border-color:var(--warn);box-shadow:0 0 20px rgba(255,204,2,.35);animation:win-glow .8s ease infinite alternate}
+@keyframes win-glow{from{box-shadow:0 0 10px rgba(255,204,2,.2)}to{box-shadow:0 0 28px rgba(255,204,2,.6)}}
+
+.cell-mark{font-size:2.6rem;font-weight:800;line-height:1;opacity:0;transform:scale(.3) rotate(-15deg);transition:opacity .22s,transform .22s cubic-bezier(.34,1.56,.64,1)}
+.cell-mark.show{opacity:1;transform:scale(1) rotate(0)}
+.cell-mark.x{color:var(--x)}
+.cell-mark.o{color:var(--o)}
+
+/* Ghost superpositions */
+.ghost-layer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:3px;padding:6px;pointer-events:none}
+.ghost{font-size:1rem;font-weight:700;opacity:.3;transition:opacity .2s}
+.ghost.x{color:var(--x)}
+.ghost.o{color:var(--o)}
+.ghost.pending{opacity:.6;animation:ghost-pulse .7s ease infinite alternate}
+@keyframes ghost-pulse{from{opacity:.4}to{opacity:.8}}
+
+/* Quantum mode toggle */
+.mode-bar{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 20px;width:min(400px,96vw)}
+.mode-label{font-size:.82rem;color:var(--muted)}
+.toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.toggle-track{width:40px;height:22px;border-radius:11px;background:var(--border);position:relative;transition:background .2s;flex-shrink:0}
+.toggle-track.on{background:var(--accent)}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.toggle-track.on .toggle-thumb{transform:translateX(18px)}
+.toggle-text{font-size:.8rem;font-weight:600;color:var(--accent);min-width:28px}
+
+/* Quantum hint */
+.q-hint{font-size:.78rem;color:var(--accent2);text-align:center;min-height:1.4em;margin-bottom:8px;font-family:'JetBrains Mono',monospace;transition:opacity .2s}
+
+/* Buttons */
+button{font-family:'Space Grotesk',sans-serif;font-size:.88rem;font-weight:600;padding:9px 22px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--fg);cursor:pointer;transition:all .15s}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:active{transform:scale(.96)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{filter:brightness(1.15)}
+
+.btn-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px}
+
+/* Log */
+.log{width:min(400px,96vw);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;max-height:110px;overflow-y:auto;margin-top:14px;display:flex;flex-direction:column;gap:3px}
+.log-entry{font-size:.73rem;color:var(--muted);font-family:'JetBrains Mono',monospace;padding:2px 0;border-bottom:1px solid rgba(42,48,80,.4)}
+.log-entry:last-child{border-bottom:none}
+.log-entry.q{color:var(--accent2)}
+.log-entry.win{color:var(--good);font-weight:600}
+.log-entry.draw{color:var(--warn);font-weight:600}
+
+/* Result banner */
+.result-banner{display:none;flex-direction:column;align-items:center;gap:8px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(400px,96vw);text-align:center;margin-bottom:12px}
+.result-banner.show{display:flex}
+.result-emoji{font-size:3.5rem;line-height:1}
+.result-banner h2{font-size:1.6rem;font-weight:800}
+.result-banner p{color:var(--muted);font-size:.88rem}
+
+/* Explanation panel */
+.explain{width:min(400px,96vw);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px}
+.explain h3{font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:10px}
+.explain-item{display:flex;gap:10px;margin-bottom:8px;font-size:.82rem;line-height:1.5}
+.explain-item:last-child{margin-bottom:0}
+.explain-icon{font-size:1.1rem;flex-shrink:0;margin-top:1px}
+.explain-text{color:var(--muted)}
+.explain-text b{color:var(--fg)}
+
+footer{margin-top:24px;font-size:.72rem;color:var(--border);text-align:center}
+</style>
+</head>
+<body>
+
+<h1>⚛ <span>量子井字棋</span></h1>
+<p class="subtitle">兩人輪流 · 量子疊加 · 波函數塌縮</p>
+
+<!-- Score / turn bar -->
+<div class="scorebar">
+  <div class="score-side active" id="side-x">
+    <div class="score-name">玩家一</div>
+    <div class="score-mark x">✕</div>
+    <div class="score-pts" id="pts-x">0</div>
+  </div>
+  <div class="score-mid">
+    <div class="turn-label">回合</div>
+    <div class="turn-mark x" id="turn-mark">✕</div>
+  </div>
+  <div class="score-side" id="side-o">
+    <div class="score-name">玩家二</div>
+    <div class="score-mark o">○</div>
+    <div class="score-pts" id="pts-o">0</div>
+  </div>
+</div>
+
+<!-- Quantum mode toggle -->
+<div class="mode-bar">
+  <span class="mode-label">量子模式</span>
+  <label class="toggle" id="q-toggle" tabindex="0">
+    <div class="toggle-track" id="q-track"><div class="toggle-thumb"></div></div>
+    <span class="toggle-text" id="q-text">OFF</span>
+  </label>
+  <span class="mode-label" style="color:var(--accent2);font-size:.75rem">🌀 疊加態</span>
+</div>
+
+<!-- Quantum hint -->
+<div class="q-hint" id="q-hint"></div>
+
+<!-- Board -->
+<div class="board-wrap">
+  <div class="board" id="board"></div>
+</div>
+
+<!-- Result banner -->
+<div class="result-banner" id="result-banner">
+  <div class="result-emoji" id="res-emoji">🏆</div>
+  <h2 id="res-title"></h2>
+  <p id="res-desc"></p>
+</div>
+
+<!-- Buttons -->
+<div class="btn-row">
+  <button class="primary" id="new-game-btn">新局開始</button>
+  <button id="undo-btn">↩ 悔棋</button>
+</div>
+
+<!-- Log -->
+<div class="log" id="log"></div>
+
+<!-- Physics explainer -->
+<div class="explain">
+  <h3>量子物理說明</h3>
+  <div class="explain-item">
+    <span class="explain-icon">🌀</span>
+    <span class="explain-text"><b>量子疊加</b>：開啟量子模式後，每回合可同時在兩格放置「幽靈棋子」。就像電子可以同時存在多個位置。</span>
+  </div>
+  <div class="explain-item">
+    <span class="explain-icon">⚡</span>
+    <span class="explain-text"><b>波函數塌縮</b>：當一格累積 2 個以上的疊加態，系統會隨機「觀測」它，確定成一個結果。就像量子測量造成的塌縮。</span>
+  </div>
+  <div class="explain-item">
+    <span class="explain-icon">🎲</span>
+    <span class="explain-text"><b>不確定性原理</b>：塌縮結果無法預測，只能知道機率。這讓策略多了一層隨機性，就像量子世界的本質。</span>
+  </div>
+</div>
+
+<footer>量子井字棋 · 科普教學版 · 離線可用</footer>
+
+<script>
+(function(){
+'use strict';
+
+// ── State ──────────────────────────────────────────────────
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+let board, supers, turn, gameOver, qMode, qFirst, history, scores;
+
+function freshState() {
+  board    = Array(9).fill(null);
+  supers   = Array(9).fill(null).map(()=>[]);
+  turn     = 'X';
+  gameOver = false;
+  qMode    = false;
+  qFirst   = null;
+  history  = [];
+  if (!scores) scores = {X:0, O:0};
+}
+
+// ── Build board cells ──────────────────────────────────────
+function buildBoard() {
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.i = i;
+
+    const mark = document.createElement('div');
+    mark.className = 'cell-mark';
+    mark.id = `m${i}`;
+    cell.appendChild(mark);
+
+    const ghost = document.createElement('div');
+    ghost.className = 'ghost-layer';
+    ghost.id = `g${i}`;
+    cell.appendChild(ghost);
+
+    cell.addEventListener('click', () => onCell(i));
+    el.appendChild(cell);
+  }
+}
+
+// ── Render ─────────────────────────────────────────────────
+function render(winLine) {
+  for (let i = 0; i < 9; i++) {
+    const cell  = document.querySelector(`.cell[data-i="${i}"]`);
+    const markEl = document.getElementById(`m${i}`);
+    const ghostEl = document.getElementById(`g${i}`);
+
+    // Win highlight
+    cell.classList.toggle('win-cell', !!(winLine && winLine.includes(i)));
+
+    if (board[i]) {
+      markEl.textContent = board[i] === 'X' ? '✕' : '○';
+      markEl.className = `cell-mark show ${board[i].toLowerCase()}`;
+      cell.classList.add('taken');
+      ghostEl.innerHTML = '';
+    } else {
+      markEl.className = 'cell-mark';
+      cell.classList.remove('taken');
+
+      ghostEl.innerHTML = '';
+      (supers[i] || []).forEach(sp => {
+        const g = document.createElement('div');
+        const isPending = sp.pending;
+        g.className = `ghost ${sp.mark.toLowerCase()}${isPending ? ' pending' : ''}`;
+        g.textContent = sp.mark === 'X' ? '✕' : '○';
+        ghostEl.appendChild(g);
+      });
+
+      // Hoverable?
+      if (gameOver) {
+        cell.classList.add('no-turn');
+      } else {
+        cell.classList.remove('no-turn');
+      }
+    }
+  }
+
+  // Turn bar
+  const turnMark = document.getElementById('turn-mark');
+  turnMark.textContent = turn === 'X' ? '✕' : '○';
+  turnMark.className   = `turn-mark ${turn.toLowerCase()}`;
+  document.getElementById('side-x').classList.toggle('active', turn==='X' && !gameOver);
+  document.getElementById('side-o').classList.toggle('active', turn==='O' && !gameOver);
+
+  // Q hint
+  const hint = document.getElementById('q-hint');
+  if (!gameOver && qMode) {
+    if (qFirst !== null) {
+      hint.textContent = `第 1 格已選（格 ${qFirst+1}）→ 再點第 2 格完成疊加，或再點同格取消`;
+    } else {
+      hint.textContent = '量子模式：點兩格放置疊加態';
+    }
+    hint.style.opacity = '1';
+  } else {
+    hint.textContent = '';
+    hint.style.opacity = '0';
+  }
+}
+
+// ── Cell click ─────────────────────────────────────────────
+function onCell(i) {
+  if (gameOver) return;
+  if (board[i] !== null) return;
+
+  if (qMode) {
+    handleQuantum(i);
+  } else {
+    handleClassic(i);
+  }
+}
+
+function saveHistory() {
+  history.push({
+    board:  [...board],
+    supers: supers.map(s=>[...s]),
+    turn
+  });
+}
+
+function handleClassic(i) {
+  saveHistory();
+  board[i] = turn;
+  supers[i] = [];
+  log(`${turn==='X'?'✕':'○'} 落子 → 格 ${i+1}`);
+  nextTurn();
+}
+
+function handleQuantum(i) {
+  if (qFirst === null) {
+    // Mark first selection as pending ghost
+    saveHistory();
+    supers[i] = [...(supers[i]||[]), { mark: turn, pending: true }];
+    qFirst = i;
+    render();
+  } else if (i === qFirst) {
+    // Cancel
+    supers[i] = supers[i].filter(s=>!s.pending);
+    qFirst = null;
+    history.pop(); // undo the saved step
+    render();
+  } else {
+    // Confirm quantum move on two cells
+    // Clear pending ghost
+    supers[qFirst] = supers[qFirst].filter(s=>!s.pending);
+
+    supers[qFirst] = [...supers[qFirst], { mark: turn }];
+    supers[i]      = [...(supers[i]||[]), { mark: turn }];
+
+    log(`⚛ ${turn==='X'?'✕':'○'} 疊加態 → 格 ${qFirst+1} + 格 ${i+1}`, 'q');
+
+    // Auto-collapse cells with ≥2 superpositions
+    let collapsed = false;
+    for (let c = 0; c < 9; c++) {
+      if (!board[c] && supers[c] && supers[c].length >= 2) {
+        // Weighted random collapse
+        const sp = supers[c];
+        const xs = sp.filter(s=>s.mark==='X').length;
+        const os = sp.filter(s=>s.mark==='O').length;
+        const chosen = Math.random() < xs/(xs+os) ? 'X' : 'O';
+        board[c]  = chosen;
+        supers[c] = [];
+        collapsed = true;
+        log(`⚡ 格 ${c+1} 塌縮 → ${chosen==='X'?'✕':'○'}（觀測！）`, 'q');
+      }
+    }
+
+    qFirst = null;
+    nextTurn();
+  }
+}
+
+// ── Turn / win logic ───────────────────────────────────────
+function nextTurn() {
+  const result = checkWin();
+  if (result) {
+    gameOver = true;
+    if (result === 'draw') {
+      log('平局！本局不計分。', 'draw');
+      showResult('draw');
+    } else {
+      scores[result]++;
+      document.getElementById('pts-x').textContent = scores.X;
+      document.getElementById('pts-o').textContent = scores.O;
+      log(`🏆 ${result==='X'?'✕ 玩家一':'○ 玩家二'} 勝利！`, 'win');
+      showResult(result, result === 'X' ? LINES.find(l=>l.every(c=>board[c]==='X')) : LINES.find(l=>l.every(c=>board[c]==='O')));
+    }
+  } else {
+    turn = turn === 'X' ? 'O' : 'X';
+    render();
+  }
+}
+
+function checkWin() {
+  for (const line of LINES) {
+    const [a,b,c] = line;
+    if (board[a] && board[a]===board[b] && board[b]===board[c]) return board[a];
+  }
+  if (board.every(c=>c!==null)) return 'draw';
+  return null;
+}
+
+function showResult(winner, winLine) {
+  const banner = document.getElementById('result-banner');
+  const emoji  = document.getElementById('res-emoji');
+  const title  = document.getElementById('res-title');
+  const desc   = document.getElementById('res-desc');
+
+  if (winner === 'draw') {
+    emoji.textContent = '🤝';
+    title.textContent = '平局！';
+    desc.textContent  = '勢均力敵，再來一局？';
+    title.style.color = 'var(--warn)';
+  } else {
+    emoji.textContent = '🏆';
+    title.textContent = winner==='X' ? '✕ 玩家一勝利！' : '○ 玩家二勝利！';
+    title.style.color = winner==='X' ? 'var(--x)' : 'var(--o)';
+    desc.textContent  = `量子策略奏效！目前比分：玩家一 ${scores.X} : ${scores.O} 玩家二`;
+  }
+
+  banner.classList.add('show');
+  if (winLine) render(winLine); else render();
+}
+
+// ── Log ────────────────────────────────────────────────────
+function log(msg, cls='') {
+  const logEl = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${cls}`;
+  entry.textContent = msg;
+  logEl.appendChild(entry);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ── Quantum toggle ─────────────────────────────────────────
+document.getElementById('q-toggle').addEventListener('click', () => {
+  if (gameOver) return;
+  qMode = !qMode;
+  // Clear any pending first move
+  if (qFirst !== null) {
+    supers[qFirst] = supers[qFirst].filter(s=>!s.pending);
+    if (history.length) history.pop();
+    qFirst = null;
+  }
+  document.getElementById('q-track').classList.toggle('on', qMode);
+  document.getElementById('q-text').textContent = qMode ? 'ON' : 'OFF';
+  render();
+});
+
+// ── New game ───────────────────────────────────────────────
+document.getElementById('new-game-btn').addEventListener('click', () => {
+  freshState();
+  document.getElementById('q-track').classList.remove('on');
+  document.getElementById('q-text').textContent = 'OFF';
+  document.getElementById('result-banner').classList.remove('show');
+  document.getElementById('log').innerHTML = '';
+  buildBoard();
+  render();
+  log('新局開始！');
+});
+
+// ── Undo ───────────────────────────────────────────────────
+document.getElementById('undo-btn').addEventListener('click', () => {
+  if (!history.length || gameOver) return;
+  const prev = history.pop();
+  board  = prev.board;
+  supers = prev.supers;
+  turn   = prev.turn;
+  qFirst = null;
+  document.getElementById('result-banner').classList.remove('show');
+  render();
+  log('↩ 悔棋');
+});
+
+// ── Init ───────────────────────────────────────────────────
+freshState();
+buildBoard();
+render();
+log('遊戲開始！玩家一（✕）先手');
+
+})();
+</script>
+</body>
+</html>
